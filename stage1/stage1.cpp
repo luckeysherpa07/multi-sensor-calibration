@@ -12,8 +12,6 @@
 #include <iomanip>
 #include <sstream>
 
-
-
 class EventAnalyzer {
 public:
 	cv::Mat img, img_swap;
@@ -149,7 +147,7 @@ int recordFromCamera(int argc, char* argv[]) {
 
 	clearTempFolder();
 
-	std::string python_path = "D:/Programs/Python/Python310/python.exe";
+	std::string python_path = "/usr/bin/python3";
 	std::string live1_path = "D:/Programs/DV/live1.py";
 	std::string live2_path = "D:/Programs/DV/live2.py";
 
@@ -507,7 +505,7 @@ int readFromFile(int argc, char* argv[]) {
 
 	clearTempFolder();
 
-	std::string python_path = "D:/Programs/Python/Python310/python.exe";
+	std::string python_path = "/usr/bin/python3";
 	std::string read1_path = "D:/Programs/DV/read1.py";
 	std::string read2_path = "D:/Programs/DV/read2.py";
 
@@ -613,7 +611,7 @@ int readFromFile(int argc, char* argv[]) {
 
 	while (!stop_application) {
 		//Control the acquisition time and display frame rate to determine the playback rate
-		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimestamp(get_time, 10000);
+		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimeStamp(get_time, 10000);
 		get_time += 40000;
 		event_analyzer.process_events(events->data(), events->data() + events->size());
 
@@ -795,7 +793,7 @@ int savepng1(int argc, char* argv[]) {
 
 	while (!stop_application) {
 		//Control the acquisition time and display frame rate to determine the playback rate
-		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimestamp(get_time, 10000);
+		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimeStamp(get_time, 10000);
 		get_time += 40000;
 		event_analyzer.process_events(events->data(), events->data() + events->size());
 
@@ -998,7 +996,7 @@ int savepng2(int argc, char* argv[]) {
 
 	while (!stop_application) {
 		//Control the acquisition time and display frame rate to determine the playback rate
-		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimestamp(get_time, 10000);
+		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimeStamp(get_time, 10000);
 		get_time += 40000;
 		event_analyzer.process_events(events->data(), events->data() + events->size());
 
@@ -1057,7 +1055,7 @@ int savepng2(int argc, char* argv[]) {
 
 int main(int argc, char* argv[]) {
 
-	std::string python_path = "D:/Programs/Python/Python310/python.exe";
+	std::string python_path = "/usr/bin/python3";
 	std::string savepng1_path = "D:/Programs/DV/savepng1.py";
 	std::string savepng2_path = "D:/Programs/DV/savepng2.py";
 
