@@ -142,364 +142,223 @@ void clearTempFolder() {
 	}
 }
 
-
 int recordFromCamera(int argc, char* argv[]) {
+    clearTempFolder();
 
-	clearTempFolder();
+    std::string python_path = "/usr/bin/python3";
+    std::string live1_path = "../../live1.py";
+    std::string live2_path = "../../live2.py";
+    std::string display_feed_path = "../../display_live_feed.py";  // Add path for the new Python script
 
-	std::string python_path = "/usr/bin/python3";
-	std::string live1_path = "../../live1.py";
-	std::string live2_path = "../../live2.py";
+    // 处理文件路径
+    std::string base_path = "D:/Programs/DV/Recording/";
+    std::string file_name;
+    std::string out_file_path;
 
-	// 处理文件路径
-	std::string base_path = "D:/Programs/DV/Recording/";
-	std::string file_name;
-	std::string out_file_path;
+    std::string cali_path = "D:/Programs/DV/Recording/cali/dvsense/";
 
-	std::string cali_path = "D:/Programs/DV/Recording/cali/dvsense/";
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::localtime(&now_c);
 
-	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-	std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-	std::tm tm = *std::localtime(&now_c);
+    std::stringstream date_str;
+    date_str << std::put_time(&tm, "%Y%m%d");
+    std::string date = date_str.str();
 
-	std::stringstream date_str;
-	date_str << std::put_time(&tm, "%Y%m%d");
-	std::string date = date_str.str();
+    // 显示帮助信息
+    const std::string short_program_desc(
+        "Simple viewer to stream events from device, using the SDK driver API\n");
+    std::string long_program_desc(short_program_desc +
+        "Press 'q' or Escape key to leave the program.\n"
+        "Press 'Space' key to start/stop recording events to a raw file\n");
 
-	// 显示帮助信息
-	const std::string short_program_desc(
-		"Simple viewer to stream events from device, using the SDK driver API\n");
-	std::string long_program_desc(short_program_desc +
-		"Press 'q' or Escape key to leave the program.\n"
-		"Press 'Space' key to start/stop recording events to a raw file\n");
+    if (argc > 1 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+        std::cout << "Usage: " << argv[0] << " [output_file_name.raw]" << std::endl;
+        std::cout << "Default save path: " << base_path << "default_file_name.raw" << std::endl;
+        std::cout << long_program_desc << std::endl;
+        return 0;
+    }
 
-	if (argc > 1 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
-		std::cout << "Usage: " << argv[0] << " [output_file_name.raw]" << std::endl;
-		std::cout << "Default save path: " << base_path << "default_file_name.raw" << std::endl;
-		std::cout << long_program_desc << std::endl;
-		return 0;
-	}
+    std::cout << long_program_desc << std::endl;
 
-	std::cout << long_program_desc << std::endl;
+    // ----------------- Camera initialization -----------------
+    dvsense::DvsCameraManager cameraManager;
+    dvsense::CameraDevice camera;
+    const int fps = 30;
+    const int wait_time = static_cast<int>(std::round(1.f / fps * 1000));
 
-	// ----------------- Camera initialization -----------------
-	dvsense::DvsCameraManager cameraManager;
-	dvsense::CameraDevice camera;
-	const int fps = 30;
-	const int wait_time = static_cast<int>(std::round(1.f / fps * 1000));
+    if (argc == 2) {
+        file_name = argv[1];
+        out_file_path = base_path + file_name;
+    }
+    else {
+        while (true) {
+            std::cout << "Enter a file name (must end with .raw): ";
+            std::cin >> file_name;
 
-	if (argc == 2) {
-		file_name = argv[1];
-		out_file_path = base_path + file_name;
-	}
-	else {
-		while (true) {
-			std::cout << "Enter a file name (must end with .raw): ";
-			std::cin >> file_name;
+            if (file_name.size() < 5 || file_name.substr(file_name.size() - 4) != ".raw") {
+                std::cerr << "Invalid file name! It must end with '.raw'" << std::endl;
+                continue;
+            }
 
-			if (file_name.size() < 5 || file_name.substr(file_name.size() - 4) != ".raw") {
-				std::cerr << "Invalid file name! It must end with '.raw'" << std::endl;
-				continue;
-			}
+            out_file_path = base_path + file_name;
 
-			out_file_path = base_path + file_name;
+            if (std::filesystem::exists(out_file_path)) {
+                char choice;
+                std::cout << "File already exists! Overwrite (o), re-enter (r), or cancel (c): ";
+                std::cin >> choice;
 
-			if (std::filesystem::exists(out_file_path)) {
-				char choice;
-				std::cout << "File already exists! Overwrite (o), re-enter (r), or cancel (c): ";
-				std::cin >> choice;
+                if (choice == 'o' || choice == 'O') {
+                    break;  // 选择覆盖
+                }
+                else if (choice == 'r' || choice == 'R') {
+                    continue;  // 重新输入
+                }
+                else {
+                    camera->stop();
+                    return 0;
+                }
+            }
+            else {
+                break;  // 无同名文件
+            }
+        }
+    }
+    std::cout << "Saving file to: " << out_file_path << std::endl;
 
-				if (choice == 'o' || choice == 'O') {
-					break;  // 选择覆盖
-				}
-				else if (choice == 'r' || choice == 'R') {
-					continue;  // 重新输入
-				}
-				else {
-					camera->stop();
-					return 0;
-				}
-			}
-			else {
-				break;  // 无同名文件
-			}
-		}
-	}
-	std::cout << "Saving file to: " << out_file_path << std::endl;
+    // ----------------- Run Python scripts -----------------
+    std::thread python_thread1(run_python_script, python_path, live1_path);
+    std::thread python_thread2(run_python_script, python_path, live2_path);
+    std::thread python_thread3(run_python_script, python_path, display_feed_path); // New thread for display_live_feed.py
+    python_thread1.join();
+    python_thread2.join();
+    python_thread3.join(); // Join the new thread
 
-	std::thread python_thread(run_python_script, python_path, live1_path);
-	python_thread.join();
-	
-	cv::Mat display;
-	const std::string window_name = "DVSense Camera Viewer";
-	cv::namedWindow(window_name, cv::WINDOW_GUI_EXPANDED);
+    cv::Mat display;
+    const std::string window_name = "DVSense Camera Viewer";
+    cv::namedWindow(window_name, cv::WINDOW_GUI_EXPANDED);
 
-	EventAnalyzer event_analyzer;
-	bool is_recording = false;
-	bool stop_application = false;
-	int save_count = 1;
+    EventAnalyzer event_analyzer;
+    bool is_recording = false;
+    bool stop_application = false;
+    int save_count = 1;
 
-	std::thread python_live2(run_python_script, python_path, live2_path);
+    do {
+        if (!camera || !camera->isConnected())
+        {
+            // If the camera is not connected, reconnect it.
+            const std::vector<dvsense::CameraDescription> camera_descs = cameraManager.getCameraDescs();
+            // Print all cameras found
+            for (auto& cameraDesc : camera_descs) {
+                LOG_INFO("Camera found: %s : %s", cameraDesc.manufacturer.c_str(), cameraDesc.serial.c_str());
+            }
+            if (camera_descs.size() > 0)
+            {
+                // Open the first camera found
+                camera = cameraManager.openCamera(camera_descs[0].serial);
+                if (camera)
+                {
+                    LOG_INFO("Camera open success.");
 
-	do {
-		if (!camera || !camera->isConnected())
-		{
-			// If the camera is not connected, reconnect it.
-			const std::vector<dvsense::CameraDescription> camera_descs = cameraManager.getCameraDescs();
-			// Print all cameras found
-			for (auto& cameraDesc : camera_descs) {
-				LOG_INFO("Camera found: %s : %s", cameraDesc.manufacturer.c_str(), cameraDesc.serial.c_str());
-			}
-			if (camera_descs.size() > 0)
-			{
-				// Open the first camera found
-				camera = cameraManager.openCamera(camera_descs[0].serial);
-				if (camera)
-				{
-					LOG_INFO("Camera open success.");
+                    event_analyzer.setup_display(camera->getWidth(), camera->getHeight());
 
-					event_analyzer.setup_display(camera->getWidth(), camera->getHeight());
+                    // Start a thread to get events from the camera
+                    camera->setBatchEventsNum(10000);
+                    camera->addEventsStreamHandleCallback([&event_analyzer](const dvsense::Event2D* begin, const dvsense::Event2D* end) {
+                        event_analyzer.process_events(begin, end);
+                        });
+                    camera->addTriggerInCallback([](const dvsense::EventTriggerIn trigger) {
+                        LOG_INFO("Trigger info: id: %d, p: %d, time: %d", trigger.id, trigger.polarity, trigger.timestamp);
+                        });
+                    cv::resizeWindow(window_name, camera->getWidth(), camera->getHeight());
 
-					// Start a thread to get events from the camera
-					camera->setBatchEventsNum(10000);
-					camera->addEventsStreamHandleCallback([&event_analyzer](const dvsense::Event2D* begin, const dvsense::Event2D* end) {
-						event_analyzer.process_events(begin, end);
-						});
-					camera->addTriggerInCallback([](const dvsense::EventTriggerIn trigger) {
-						LOG_INFO("Trigger info: id: %d, p: %d, time: %d", trigger.id, trigger.polarity, trigger.timestamp);
-						});
-					cv::resizeWindow(window_name, camera->getWidth(), camera->getHeight());
+                    camera->start();
+                }
+            }
+            else
+            {
+                LOG_INFO("Waiting for camera to connect...");
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            }
+        }
 
-					camera->start();
-				}
-			}
-			else
-			{
-				LOG_INFO("Watting camera connect...");
-				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-			}
-		}
-		event_analyzer.get_display_frame(display);
-		if (!display.empty()) {
-			cv::imshow(window_name, display);
-		}
+        event_analyzer.get_display_frame(display);
+        if (!display.empty()) {
+            cv::imshow(window_name, display);
+        }
 
-		// If user presses `q` key, exit loop and stop application
-		int key = cv::waitKey(wait_time);
-		if ((key & 0xff) == 'q' || (key & 0xff) == 27 || check_stop_signal()) {
-			stop_application = true;
-			std::cout << "Button triggered, exit" << std::endl;
-			camera->stop();
-		}
-		else if (((key & 0xff) == 'c') || check_cali_signal()) {
-			if (check_cali_signal()) {
-				std::string img_filename = cali_path + date + "_" + std::to_string(save_count) + ".png";
-				cv::imwrite(img_filename, display);
-				std::cout << "Saved: " << img_filename << std::endl;
-				save_count++;
-				clearTempFolder();
-			}
-			else {
-				set_cali_signal();
-				std::string img_filename = cali_path + date + "_" + std::to_string(save_count) + ".png";
-				cv::imwrite(img_filename, display);
-				std::cout << "Saved: " << img_filename << std::endl;
-				save_count++;
-			}
-		}
-		else if (((key & 0xff) == ' ') || check_sr_signal() || check_ss_signal())
-		{
-			if (check_ss_signal() && !((key & 0xff) == ' ')) {
-				if (is_recording) {
-					is_recording = false;
-					camera->stopRecording();
-					std::cout << "C1.stop save raw file: " << out_file_path << std::endl;
-					clearTempFolder();
-				}
-			}
-			else if (check_sr_signal() && !((key & 0xff) == ' ')) {
-				if (!is_recording) {
-					is_recording = true;
-					if (camera->startRecording(out_file_path) == 0)
-					{
-						std::cout << "C2.start save raw file: " << out_file_path << std::endl;
-					}
-				}
-			}
-			else if (((key & 0xff) == ' ') && !check_sr_signal() && !check_ss_signal()) {
-				if (is_recording) {
-					set_ss_signal();
-					is_recording = false;
-					camera->stopRecording();
-					std::cout << "C3.stop save raw file: " << out_file_path << std::endl;
-				}
-				else {
-					set_sr_signal();
-					is_recording = true;
-					if (camera->startRecording(out_file_path) == 0)
-					{
-						std::cout << "C4.start save raw file: " << out_file_path << std::endl;
-					}
-				}
-			}
-			else if (((key & 0xff) == ' ') && check_sr_signal() && !check_ss_signal()) {
-				if (is_recording) {
-					clearTempFolder();
-					set_ss_signal();
-					is_recording = false;
-					camera->stopRecording();
-					std::cout << "C5.stop save raw file: " << out_file_path << std::endl;
-				}
-				/*else {
-					set_sr_signal();
-					is_recording = true;
-					if (camera->startRecording(out_file_path) == 0)
-					{
-						std::cout << "start save raw file: " << out_file_path << std::endl;
-					}
+        // If user presses `q` key, exit loop and stop application
+        int key = cv::waitKey(wait_time);
+        if ((key & 0xff) == 'q' || (key & 0xff) == 27 || check_stop_signal()) {
+            stop_application = true;
+            std::cout << "Button triggered, exit" << std::endl;
+            camera->stop();
+        }
+        else if (((key & 0xff) == 'c') || check_cali_signal()) {
+            if (check_cali_signal()) {
+                std::string img_filename = cali_path + date + "_" + std::to_string(save_count) + ".png";
+                cv::imwrite(img_filename, display);
+                std::cout << "Saved: " << img_filename << std::endl;
+                save_count++;
+                clearTempFolder();
+            }
+            else {
+                set_cali_signal();
+                std::string img_filename = cali_path + date + "_" + std::to_string(save_count) + ".png";
+                cv::imwrite(img_filename, display);
+                std::cout << "Saved: " << img_filename << std::endl;
+                save_count++;
+            }
+        }
+        else if (((key & 0xff) == ' ') || check_sr_signal() || check_ss_signal())
+        {
+            if (check_ss_signal() && !((key & 0xff) == ' ')) {
+                if (is_recording) {
+                    is_recording = false;
+                    camera->stopRecording();
+                    std::cout << "C1.stop save raw file: " << out_file_path << std::endl;
+                    clearTempFolder();
+                }
+            }
+            else if (check_sr_signal() && !((key & 0xff) == ' ')) {
+                if (!is_recording) {
+                    is_recording = true;
+                    if (camera->startRecording(out_file_path) == 0)
+                    {
+                        std::cout << "C2.start save raw file: " << out_file_path << std::endl;
+                    }
+                }
+            }
+            else if (((key & 0xff) == ' ') && !check_sr_signal() && !check_ss_signal()) {
+                if (is_recording) {
+                    set_ss_signal();
+                    is_recording = false;
+                    camera->stopRecording();
+                    std::cout << "C3.stop save raw file: " << out_file_path << std::endl;
+                }
+                else {
+                    set_sr_signal();
+                    is_recording = true;
+                    if (camera->startRecording(out_file_path) == 0)
+                    {
+                        std::cout << "C4.start save raw file: " << out_file_path << std::endl;
+                    }
+                }
+            }
+        }
+    } while (!stop_application);
 
-				}*/
-			}
-			/*else if (((key & 0xff) == ' ') && check_ss_signal()) {
-				if (is_recording) {
-					set_ss_signal();
-					is_recording = false;
-					camera->stopRecording();
-					std::cout << "stop save raw file: " << out_file_path << std::endl;
-				}
-				else {
-					set_sr_signal();
-					is_recording = true;
-					if (camera->startRecording(out_file_path) == 0)
-					{
-						std::cout << "start save raw file: " << out_file_path << std::endl;
-					}
+    if (!check_stop_signal()) {
+        set_stop_signal();
+    }
+    else {
+        clearTempFolder();
+    }
 
-				}
-			}*/
-
-
-			/*if (is_recording)
-			{
-				is_recording = false;
-				camera->stopRecording();
-				std::cout << "stop save raw file: " << out_file_path << std::endl;
-			}
-			else
-			{
-				is_recording = true;
-				if (camera->startRecording(out_file_path) == 0)
-				{
-					std::cout << "start save raw file: " << out_file_path << std::endl;
-				}
-			}*/
-		}
-	} while (!stop_application);
-
-	if (!check_stop_signal()) {
-		set_stop_signal();
-	}
-	else {
-		clearTempFolder();
-	}
-
-	python_live2.join();
-
-	return 0;
-	
-
-	// 查找所有的摄像头
-	/*dvsense::DvsCameraManager cameraManager;
-	std::vector<dvsense::CameraDescription> cameraDescs = cameraManager.getCameraDescs();
-
-	if (cameraDescs.empty()) {
-		std::cout << "No cameras found" << std::endl;
-	}
-	else {
-		std::cout << "Found " << cameraDescs.size() << " camera(s):\n";
-		for (const auto& cam : cameraDescs) {
-			std::cout << "Serial: " << cam.serial << std::endl;
-		}
-	}
-
-	// 打开第一个摄像头
-	dvsense::CameraDevice camera = cameraManager.openCamera(cameraDescs[0].serial);
-	if (!camera) {
-		std::cerr << "Failed to open camera" << std::endl;
-		return -1;
-	}
-
-	camera->setBatchEventsTime(1000000);
-	//camera->setBatchEventsNum(100000);
-	camera->start();  // 开始取流
-
-	std::string base_path = "D:/Programs/DV/";  // 固定路径
-	std::string file_name;
-	std::string save_path;
-
-	while (true) {
-		std::cout << "Enter a file name (must end with .raw): ";
-		std::cin >> file_name;
-
-		// 正确输入 .raw 
-		if (file_name.size() < 5 || file_name.substr(file_name.size() - 4) != ".raw") {
-			std::cerr << "Invalid file name! It must end with '.raw'" << std::endl;
-			continue;
-		}
-
-		save_path = base_path + file_name;
-
-		// 是否存在
-		if (std::filesystem::exists(save_path)) {
-			char choice;
-			std::cout << "Warning: File " << save_path << " already exists!\n";
-			std::cout << "Do you want to (o)verwrite, (r)e-enter name, or (c)ancel? ";
-			std::cin >> choice;
-
-			if (choice == 'o' || choice == 'O') {
-				break;  // 覆盖文件
-			}
-			else if (choice == 'r' || choice == 'R') {
-				continue;  // 重新输入
-			}
-			else {
-				camera->stop();
-				return 0;
-			}
-		}
-		else {
-			break;  // 文件不存在
-		}
-	}
-
-	// 开始录制
-	camera->startRecording(save_path);
-
-	dvsense::Event2DVector events;
-	bool ret = camera->getNextBatch(events);
-	if (ret) {
-		std::cout << "Received " << events.size() << " events" << std::endl;
-	}
-	else {
-		std::cerr << "Failed to get events" << std::endl;
-	}
-
-	// 停止录制
-	camera->stopRecording();
-
-	// 检查创建
-	if (std::filesystem::exists(save_path)) {
-		std::cout << "Recording  successed: " << save_path << std::endl;
-	}
-	else {
-		std::cerr << "Recording failed" << save_path << std::endl;
-	}
-	camera->stop();  // 停止取流
-
-	std::cout << "Camera stopped." << std::endl;*/
-
-	
+    return 0;
 }
+
+
 
 int readFromFile(int argc, char* argv[]) {
 
