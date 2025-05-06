@@ -3,7 +3,6 @@
 #include <DvsenseDriver/FileReader/DvsFileReader.h>
 #include <iostream>
 #include <vector>
-#include <conio.h>
 #include <opencv2/opencv.hpp>
 #include <DvsenseBase/logging/logger.hh>
 #include <thread>
