@@ -81,7 +81,7 @@ def clear_folder():
         except Exception as e:
             print("Failed to delete")
 
-temp_file = "D:/Programs/DV/Recording/temp/temp_file.txt"
+temp_file = "/tmp/temp_file.txt"
 
 with open(temp_file, "r") as f:
     file_path = f.read().strip()

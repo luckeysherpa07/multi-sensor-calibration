@@ -35,7 +35,7 @@ except NameError:
 
 
 base_path = "D:/Programs/DV/Recording/"
-temp_file = "D:/Programs/DV/Recording/temp/temp_file.txt"
+temp_file = "/tmp/temp_file.txt"
 
 while True:
     file_name = input("Enter a file name to read (must end with .aedat4): ")

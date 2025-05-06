@@ -148,8 +148,8 @@ int recordFromCamera(int argc, char* argv[]) {
 	clearTempFolder();
 
 	std::string python_path = "/usr/bin/python3";
-	std::string live1_path = "D:/Programs/DV/live1.py";
-	std::string live2_path = "D:/Programs/DV/live2.py";
+	std::string live1_path = "../../live1.py";
+	std::string live2_path = "../../live2.py";
 
 	// 处理文件路径
 	std::string base_path = "D:/Programs/DV/Recording/";
