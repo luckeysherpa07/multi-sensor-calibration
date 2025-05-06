@@ -141,7 +141,6 @@ void clearTempFolder() {
 		std::cerr << "Failed to delete" << std::endl;
 	}
 }
-
 int recordFromCamera(int argc, char* argv[]) {
     clearTempFolder();
 
@@ -150,13 +149,14 @@ int recordFromCamera(int argc, char* argv[]) {
     std::string live2_path = "../../live2.py";
     std::string display_feed_path = "../../display_live_feed.py";  // Add path for the new Python script
 
-    // 处理文件路径
+    // File path configuration
     std::string base_path = "D:/Programs/DV/Recording/";
     std::string file_name;
     std::string out_file_path;
 
     std::string cali_path = "D:/Programs/DV/Recording/cali/dvsense/";
 
+    // Get current date
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);
     std::tm tm = *std::localtime(&now_c);
@@ -165,7 +165,7 @@ int recordFromCamera(int argc, char* argv[]) {
     date_str << std::put_time(&tm, "%Y%m%d");
     std::string date = date_str.str();
 
-    // 显示帮助信息
+    // Display help information
     const std::string short_program_desc(
         "Simple viewer to stream events from device, using the SDK driver API\n");
     std::string long_program_desc(short_program_desc +
@@ -209,10 +209,10 @@ int recordFromCamera(int argc, char* argv[]) {
                 std::cin >> choice;
 
                 if (choice == 'o' || choice == 'O') {
-                    break;  // 选择覆盖
+                    break;  // Overwrite
                 }
                 else if (choice == 'r' || choice == 'R') {
-                    continue;  // 重新输入
+                    continue;  // Re-enter
                 }
                 else {
                     camera->stop();
@@ -220,7 +220,7 @@ int recordFromCamera(int argc, char* argv[]) {
                 }
             }
             else {
-                break;  // 无同名文件
+                break;  // No file with the same name
             }
         }
     }
@@ -230,9 +230,9 @@ int recordFromCamera(int argc, char* argv[]) {
     std::thread python_thread1(run_python_script, python_path, live1_path);
     std::thread python_thread2(run_python_script, python_path, live2_path);
     std::thread python_thread3(run_python_script, python_path, display_feed_path); // New thread for display_live_feed.py
-    python_thread1.join();
-    python_thread2.join();
-    python_thread3.join(); // Join the new thread
+    python_thread1.detach();
+    python_thread2.detach();
+    python_thread3.detach(); // Join the new thread
 
     cv::Mat display;
     const std::string window_name = "DVSense Camera Viewer";
@@ -244,20 +244,17 @@ int recordFromCamera(int argc, char* argv[]) {
     int save_count = 1;
 
     do {
-        if (!camera || !camera->isConnected())
-        {
+        if (!camera || !camera->isConnected()) {
             // If the camera is not connected, reconnect it.
             const std::vector<dvsense::CameraDescription> camera_descs = cameraManager.getCameraDescs();
             // Print all cameras found
             for (auto& cameraDesc : camera_descs) {
                 LOG_INFO("Camera found: %s : %s", cameraDesc.manufacturer.c_str(), cameraDesc.serial.c_str());
             }
-            if (camera_descs.size() > 0)
-            {
+            if (camera_descs.size() > 0) {
                 // Open the first camera found
                 camera = cameraManager.openCamera(camera_descs[0].serial);
-                if (camera)
-                {
+                if (camera) {
                     LOG_INFO("Camera open success.");
 
                     event_analyzer.setup_display(camera->getWidth(), camera->getHeight());
@@ -266,17 +263,16 @@ int recordFromCamera(int argc, char* argv[]) {
                     camera->setBatchEventsNum(10000);
                     camera->addEventsStreamHandleCallback([&event_analyzer](const dvsense::Event2D* begin, const dvsense::Event2D* end) {
                         event_analyzer.process_events(begin, end);
-                        });
+                    });
                     camera->addTriggerInCallback([](const dvsense::EventTriggerIn trigger) {
                         LOG_INFO("Trigger info: id: %d, p: %d, time: %d", trigger.id, trigger.polarity, trigger.timestamp);
-                        });
+                    });
                     cv::resizeWindow(window_name, camera->getWidth(), camera->getHeight());
 
                     camera->start();
                 }
             }
-            else
-            {
+            else {
                 LOG_INFO("Waiting for camera to connect...");
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
@@ -310,8 +306,7 @@ int recordFromCamera(int argc, char* argv[]) {
                 save_count++;
             }
         }
-        else if (((key & 0xff) == ' ') || check_sr_signal() || check_ss_signal())
-        {
+        else if (((key & 0xff) == ' ') || check_sr_signal() || check_ss_signal()) {
             if (check_ss_signal() && !((key & 0xff) == ' ')) {
                 if (is_recording) {
                     is_recording = false;
@@ -323,8 +318,7 @@ int recordFromCamera(int argc, char* argv[]) {
             else if (check_sr_signal() && !((key & 0xff) == ' ')) {
                 if (!is_recording) {
                     is_recording = true;
-                    if (camera->startRecording(out_file_path) == 0)
-                    {
+                    if (camera->startRecording(out_file_path) == 0) {
                         std::cout << "C2.start save raw file: " << out_file_path << std::endl;
                     }
                 }
@@ -339,12 +333,29 @@ int recordFromCamera(int argc, char* argv[]) {
                 else {
                     set_sr_signal();
                     is_recording = true;
-                    if (camera->startRecording(out_file_path) == 0)
-                    {
+                    if (camera->startRecording(out_file_path) == 0) {
                         std::cout << "C4.start save raw file: " << out_file_path << std::endl;
                     }
                 }
             }
+			else if (((key & 0xff) == ' ') && check_sr_signal() && !check_ss_signal()) {
+				if (is_recording) {
+					clearTempFolder();
+					set_ss_signal();
+					is_recording = false;
+					camera->stopRecording();
+					std::cout << "C5.stop save raw file: " << out_file_path << std::endl;
+				}
+				/*else {
+					set_sr_signal();
+					is_recording = true;
+					if (camera->startRecording(out_file_path) == 0)
+					{
+						std::cout << "start save raw file: " << out_file_path << std::endl;
+					}
+
+				}*/
+			}
         }
     } while (!stop_application);
 
@@ -357,7 +368,6 @@ int recordFromCamera(int argc, char* argv[]) {
 
     return 0;
 }
-
 
 
 int readFromFile(int argc, char* argv[]) {
