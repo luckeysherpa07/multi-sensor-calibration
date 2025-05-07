@@ -11,7 +11,7 @@ def run():
     directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "captured_videos")
     os.makedirs(directory, exist_ok=True)
 
-    resolution = sl.RESOLUTION.VGA
+    resolution = sl.RESOLUTION.HD1080
 
     init_params = sl.InitParameters()
     init_params.camera_resolution = resolution
@@ -42,7 +42,6 @@ def run():
     cv2.namedWindow("Confidence Map", cv2.WINDOW_NORMAL)
     cv2.namedWindow("Body Tracking", cv2.WINDOW_NORMAL)
 
-    # Set the window sizes
     cv2.moveWindow("RGB View", 0, 0)
     cv2.moveWindow("Depth Map", 640, 0)
     cv2.moveWindow("Confidence Map", 0, 480)
@@ -67,59 +66,24 @@ def run():
             zed.retrieve_bodies(bodies, body_runtime_params)
 
             img_np = image.get_data()
+            img_resized = img_np.copy()  # Use the default view as-is
 
-            # FoV adjustment (ZED -> DAVIS)
-            zed_fov = 87.21  # ZED Horizontal FoV
-            davis_fov = 59.94  # DAVIS Horizontal FoV
-            zoom_factor = 3.0  # Fixed zoom factor to match
-
-            # Crop the image to simulate a zoom effect while preserving aspect ratio
-            h, w, _ = img_np.shape
-            zoom_w = int(w / zoom_factor)
-            zoom_h = int(h / zoom_factor)
-
-            start_x = (w - zoom_w) // 2
-            start_y = (h - zoom_h) // 2
-            img_np = img_np[start_y:start_y + zoom_h, start_x:start_x + zoom_w]
-
-            # Preserve the aspect ratio while resizing to fit the window size
-            target_aspect_ratio = 1.33  # DAVIS aspect ratio
-            window_width = 1280
-            window_height = 720
-
-            # Resize the image to fit the window while preserving the aspect ratio
-            new_height = int(window_width / target_aspect_ratio)
-            if new_height > window_height:
-                # If the height exceeds the window height, adjust accordingly
-                new_height = window_height
-                new_width = int(new_height * target_aspect_ratio)
-            else:
-                new_width = window_width
-
-            img_resized = cv2.resize(img_np, (new_width, new_height))
-
-            # Process depth and confidence maps accordingly
+            # Depth map
             depth_map = cv2.normalize(depth.get_data(), None, 0, 255, cv2.NORM_MINMAX)
             depth_map = cv2.convertScaleAbs(depth_map)
-            depth_map = depth_map[start_y:start_y + zoom_h, start_x:start_x + zoom_w]
-            depth_map = cv2.resize(depth_map, (new_width, new_height))
 
+            # Confidence map
             conf_map = cv2.normalize(confidence.get_data(), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             conf_map = cv2.applyColorMap(conf_map, cv2.COLORMAP_JET)
-            conf_map = conf_map[start_y:start_y + zoom_h, start_x:start_x + zoom_w]
-            conf_map = cv2.resize(conf_map, (new_width, new_height))
 
-            # Draw body keypoints on resized image
+            # Draw body keypoints
             for body in bodies.body_list:
                 if body.tracking_state == sl.OBJECT_TRACKING_STATE.OK:
                     for kp in body.keypoint_2d:
                         if not np.isnan(kp[0]) and not np.isnan(kp[1]):
-                            if start_x <= kp[0] <= start_x + zoom_w:
-                                cropped_x = int(kp[0] - start_x)
-                                cropped_y = int(kp[1] - start_y)
-                                cv2.circle(img_resized, (cropped_x, cropped_y), 3, (0, 255, 0), -1)
+                            cv2.circle(img_resized, (int(kp[0]), int(kp[1])), 3, (0, 255, 0), -1)
 
-            # Display the images
+            # Show images
             cv2.imshow("RGB View", img_resized)
             cv2.imshow("Depth Map", depth_map)
             cv2.imshow("Confidence Map", conf_map)
