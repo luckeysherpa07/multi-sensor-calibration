@@ -150,11 +150,11 @@ int recordFromCamera(int argc, char* argv[]) {
     std::string display_feed_path = "../../display_live_feed.py";  // Add path for the new Python script
 
     // File path configuration
-    std::string base_path = "D:/Programs/DV/Recording/";
+    std::string base_path = "../../Recording/";
     std::string file_name;
     std::string out_file_path;
 
-    std::string cali_path = "D:/Programs/DV/Recording/cali/dvsense/";
+    std::string cali_path = "../../Recording/cali/dvsense/";
 
     // Get current date
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
@@ -375,8 +375,8 @@ int readFromFile(int argc, char* argv[]) {
 	clearTempFolder();
 
 	std::string python_path = "/usr/bin/python3";
-	std::string read1_path = "D:/Programs/DV/read1.py";
-	std::string read2_path = "D:/Programs/DV/read2.py";
+	std::string read1_path = "../../read1.py";
+	std::string read2_path = "../../read2.py";
 
 	//读取文件
 	/*dvsense::DvsFile reader = dvsense::DvsFileReader::createFileReader("D:/Programs/DV/test.raw");
@@ -397,7 +397,7 @@ int readFromFile(int argc, char* argv[]) {
 	return 0;*/
 
 	// 处理文件路径
-	std::string base_path = "D:/Programs/DV/Recording/";
+	std::string base_path = "../../Recording/";
 	std::string file_name;
 	std::string event_file_path;
 
