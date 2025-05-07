@@ -5,11 +5,17 @@ import cv2
 import os
 import time
 
+def get_next_filename(directory, base_filename):
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    return os.path.join(directory, f"{base_filename}_{timestamp}.svo")
+
 def run():
     zed = sl.Camera()
 
     directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "captured_videos")
     os.makedirs(directory, exist_ok=True)
+
+    output_path = get_next_filename(directory, "captured_video")
 
     resolution = sl.RESOLUTION.HD1080
 
