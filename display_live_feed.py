@@ -22,7 +22,7 @@ def run():
     init_params = sl.InitParameters()
     init_params.camera_resolution = resolution
     init_params.camera_fps = 30
-    init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE
+    init_params.depth_mode = sl.DEPTH_MODE.NEURAL
     init_params.coordinate_units = sl.UNIT.MILLIMETER
 
     if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
