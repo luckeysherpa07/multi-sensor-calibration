@@ -141,6 +141,7 @@ void clearTempFolder() {
 		std::cerr << "Failed to delete" << std::endl;
 	}
 }
+
 int recordFromCamera(int argc, char* argv[]) {
     clearTempFolder();
 
@@ -369,7 +370,6 @@ int recordFromCamera(int argc, char* argv[]) {
     return 0;
 }
 
-
 int readFromFile(int argc, char* argv[]) {
 
 	clearTempFolder();
@@ -516,7 +516,6 @@ int readFromFile(int argc, char* argv[]) {
 
 	return 0;
 }
-
 
 int savepng1(int argc, char* argv[]) {
 
@@ -920,7 +919,6 @@ int savepng2(int argc, char* argv[]) {
 
 	return 0;
 }
-
 
 int main(int argc, char* argv[]) {
 
