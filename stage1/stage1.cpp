@@ -56,45 +56,45 @@ void run_python_script(const std::string& python_path, const std::string& script
 }
 
 void set_stop_signal() {
-	std::ofstream stopFile("D:/Programs/DV/Recording/temp/stop_signal.txt");
+	std::ofstream stopFile("../../Recording/temp/stop_signal.txt");
 	stopFile << "STOP";
 	stopFile.close();
 }
 
 bool check_stop_signal() {
-	std::ifstream stopFile("D:/Programs/DV/Recording/temp/stop_signal.txt");
+	std::ifstream stopFile("../../Recording/temp/stop_signal.txt");
 	return stopFile.good(); 
 }
 
 void set_sr_signal() {
-	std::ofstream srFile("D:/Programs/DV/Recording/temp/src.txt");
+	std::ofstream srFile("../../Recording/temp/src.txt");
 	srFile << "START";
 	srFile.close();
 }
 
 bool check_sr_signal() {
-	std::ifstream srFile("D:/Programs/DV/Recording/temp/sry.txt");
+	std::ifstream srFile("../../Recording/temp/sry.txt");
 	return srFile.good();
 }
 
 void set_ss_signal() {
-	std::ofstream ssFile("D:/Programs/DV/Recording/temp/ssc.txt");
+	std::ofstream ssFile("../../Recording/temp/ssc.txt");
 	ssFile << "STOP";
 	ssFile.close();
 }
 
 bool check_ss_signal() {
-	std::ifstream ssFile("D:/Programs/DV/Recording/temp/ssy.txt");
+	std::ifstream ssFile("../../Recording/temp/ssy.txt");
 	return ssFile.good();
 }
 
 bool check_cali_signal() {
-	std::ifstream caliFile("D:/Programs/DV/Recording/temp/caliy.txt");
+	std::ifstream caliFile("../../Recording/temp/caliy.txt");
 	return caliFile.good();
 }
 
 void set_cali_signal() {
-	std::ofstream caliFile("D:/Programs/DV/Recording/temp/calic.txt");
+	std::ofstream caliFile("../../Recording/temp/calic.txt");
 	caliFile << "START";
 	caliFile.close();
 }
@@ -125,7 +125,7 @@ void set_cali_signal() {
 
 
 void clearTempFolder() {
-	std::string temp_folder = "D:/Programs/DV/Recording/temp";
+	std::string temp_folder = "../../Recording/temp";
 
 	if (!std::filesystem::exists(temp_folder)) {
 		std::cout << "Folder not found" << std::endl;
