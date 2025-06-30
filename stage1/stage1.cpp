@@ -11,59 +11,90 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+// Assuming these includes are correct for your DVSense SDK
+#include <DvsenseDriver/FileReader/DvsFileReader.h>
+#include <DvsenseDriver/camera/DvsCameraManager.hpp> // If using this
+#include <DvsenseBase/logging/logger.hh> // If using this
 
+
+// New file-based signal functions for synchronization
+void set_dvsense_ready_signal() {
+    std::ofstream file("../../Recording/temp/dvsense_ready.txt");
+    file << "READY";
+    file.close();
+}
+
+void clear_dvsense_ready_signal() {
+    std::filesystem::remove("../../Recording/temp/dvsense_ready.txt");
+}
+
+void set_dvsense_rewind_signal() {
+    std::ofstream file("../../Recording/temp/dvsense_rewind.txt");
+    file << "REWIND";
+    file.close();
+}
+
+void clear_dvsense_rewind_signal() {
+    std::filesystem::remove("../../Recording/temp/dvsense_rewind.txt");
+}
+
+// Function to write timestamp (for coarse sync)
+void write_dvsense_timestamp(uint64_t timestamp) {
+    std::ofstream file("../../Recording/temp/dvsense_timestamp.txt");
+    file << timestamp;
+    file.close();
+}
+
+// Ensure the EventAnalyzer and signal functions from your original snippet are here
+// (Copied them here for completeness in the example, but assume they are external)
 class EventAnalyzer {
 public:
-	cv::Mat img, img_swap;
-	std::mutex m;
+    cv::Mat img, img_swap;
+    std::mutex m;
 
-	// Gray
-	cv::Vec3b color_bg = cv::Vec3b(0x70, 0x70, 0x70);
-	cv::Vec3b color_on = cv::Vec3b(0xbf, 0xbc, 0xb4);
-	cv::Vec3b color_off = cv::Vec3b(0x40, 0x3d, 0x33);
+    cv::Vec3b color_bg = cv::Vec3b(0x70, 0x70, 0x70);
+    cv::Vec3b color_on = cv::Vec3b(0xbf, 0xbc, 0xb4);
+    cv::Vec3b color_off = cv::Vec3b(0x40, 0x3d, 0x33);
 
-	void setup_display(const int width, const int height) {
-		img = cv::Mat(height, width, CV_8UC3);
-		img_swap = cv::Mat(height, width, CV_8UC3);
-		img.setTo(color_bg);
-	}
+    void setup_display(const int width, const int height) {
+        img = cv::Mat(height, width, CV_8UC3);
+        img_swap = cv::Mat(height, width, CV_8UC3);
+        img.setTo(color_bg);
+    }
 
-	// Called from main Thread
-	void get_display_frame(cv::Mat& display) {
-		// Swap images
-		{
-			std::unique_lock<std::mutex> lock(m);
-			std::swap(img, img_swap);
-			img.setTo(color_bg);
-		}
-		img_swap.copyTo(display);
-	}
+    void get_display_frame(cv::Mat& display) {
+        {
+            std::unique_lock<std::mutex> lock(m);
+            std::swap(img, img_swap);
+            img.setTo(color_bg);
+        }
+        img_swap.copyTo(display);
+    }
 
-	// Called from decoding Thread
-	void process_events(const dvsense::Event2D* begin, const dvsense::Event2D* end) {
-		std::unique_lock<std::mutex> lock(m);
-
-		for (auto it = begin; it != end; ++it) {
-			img.at<cv::Vec3b>(it->y, it->x) = (it->polarity) ? color_on : color_off;
-		}
-	}
+    void process_events(const dvsense::Event2D* begin, const dvsense::Event2D* end) {
+        std::unique_lock<std::mutex> lock(m);
+        for (auto it = begin; it != end; ++it) {
+            img.at<cv::Vec3b>(it->y, it->x) = (it->polarity) ? color_on : color_off;
+        }
+    }
 };
 
 void run_python_script(const std::string& python_path, const std::string& script_path) {
-	//std::string command = python_path + " " + script_path + " >nul 2>&1"; 
-	std::string command = python_path + " " + script_path;
-	std::system(command.c_str());
+    std::string command = python_path + " " + script_path;
+    std::system(command.c_str());
 }
 
 void set_stop_signal() {
-	std::ofstream stopFile("../../Recording/temp/stop_signal.txt");
-	stopFile << "STOP";
-	stopFile.close();
+    std::ofstream stopFile("../../Recording/temp/stop_signal.txt");
+    stopFile << "STOP";
+    stopFile.close();
 }
 
 bool check_stop_signal() {
-	std::ifstream stopFile("../../Recording/temp/stop_signal.txt");
-	return stopFile.good(); 
+    std::ifstream stopFile("../../Recording/temp/stop_signal.txt");
+    bool exists = stopFile.good(); // Check if file exists and can be opened
+    stopFile.close(); // Close the file stream
+    return exists;
 }
 
 void set_sr_signal() {
@@ -125,21 +156,22 @@ void set_cali_signal() {
 
 
 void clearTempFolder() {
-	std::string temp_folder = "../../Recording/temp";
+    std::string temp_folder = "../../Recording/temp";
+    // Ensure the temp folder exists before trying to clear it
+    if (!std::filesystem::exists(temp_folder)) {
+        std::filesystem::create_directories(temp_folder);
+        std::cout << "Created temp folder: " << temp_folder << std::endl;
+    }
 
-	if (!std::filesystem::exists(temp_folder)) {
-		std::cout << "Folder not found" << std::endl;
-		return;
-	}
-
-	try {
-		for (const auto& entry : std::filesystem::directory_iterator(temp_folder)) {
-			std::filesystem::remove(entry.path());
-		}
-	}
-	catch (const std::exception& e) {
-		std::cerr << "Failed to delete" << std::endl;
-	}
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(temp_folder)) {
+            std::filesystem::remove(entry.path());
+            std::cout << "Removed: " << entry.path().filename() << std::endl;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Failed to clear temp folder: " << e.what() << std::endl;
+    }
 }
 
 int recordFromCamera(int argc, char* argv[]) {
@@ -372,149 +404,143 @@ int recordFromCamera(int argc, char* argv[]) {
 
 int readFromFile(int argc, char* argv[]) {
 
-	clearTempFolder();
+    clearTempFolder(); // Clears all existing signals
 
-	std::string python_path = "/usr/bin/python3";
-	std::string read1_path = "../../read1.py";
-	std::string read2_path = "../../read2.py";
+    std::string python_path = "/usr/bin/python3"; // Adjust for your system
+    std::string zed_playback_path = "../../display_live_feed.py"; // Your ZED playback script
 
-	//读取文件
-	/*dvsense::DvsFile reader = dvsense::DvsFileReader::createFileReader("D:/Programs/DV/test.raw");
-	reader->loadFile();
-	dvsense::TimeStamp start_timestamp, end_timestamp;
-	reader->getStartTimeStamp(start_timestamp);
-	reader->getEndTimeStamp(end_timestamp);
-	reader->seekTime(start_timestamp);
-	std::cout << "Start Timestamp: " << start_timestamp << std::endl;
-	std::cout << "End Timestamp: " << end_timestamp << std::endl;
-	if (reader->seekTime(start_timestamp)) {
-		std::cout << "Seek successed" << std::endl;
-	}
-	else {
-		std::cout << "Seek failed" << std::endl;
-	}
+    // Ensure temp folder exists for signals
+    std::filesystem::create_directories("../../Recording/temp");
 
-	return 0;*/
+    // File path handling
+    std::string base_path = "../../Recording/";
+    std::string file_name;
+    std::string event_file_path;
 
-	// 处理文件路径
-	std::string base_path = "../../Recording/";
-	std::string file_name;
-	std::string event_file_path;
+    if (argc == 2) {
+        file_name = argv[1];
+        event_file_path = base_path + file_name;
+    } else {
+        while (true) {
+            std::cout << "Enter the DVSense file name to read (must end with .raw): ";
+            std::cin >> file_name;
 
-	// ----------------- Program description -----------------
+            if (file_name.size() < 5 || file_name.substr(file_name.size() - 4) != ".raw") {
+                std::cerr << "Invalid file name! It must end with '.raw'" << std::endl;
+                continue;
+            }
 
-	if (argc == 2) {
-		file_name = argv[1];
-		event_file_path = base_path + file_name;
-	}
-	else {
-		while (true) {
-			std::cout << "Enter the file name to read (must end with .raw): ";
-			std::cin >> file_name;
+            event_file_path = base_path + file_name;
 
-			if (file_name.size() < 5 || file_name.substr(file_name.size() - 4) != ".raw") {
-				std::cerr << "Invalid file name! It must end with '.raw'" << std::endl;
-				continue;
-			}
+            if (!std::filesystem::exists(event_file_path)) {
+                char choice;
+                std::cout << "File does not exist! Re-enter (r) or cancel (c): ";
+                std::cin >> choice;
 
-			event_file_path = base_path + file_name;
+                if (choice == 'r' || choice == 'R') {
+                    continue;
+                } else {
+                    return 0;
+                }
+            } else {
+                break;
+            }
+        }
+    }
 
-			if (!std::filesystem::exists(event_file_path)) {
-				char choice;
-				std::cout << "File does not exist! Re-enter (r) or cancel (c): ";
-				std::cin >> choice;
+    const std::string short_program_desc(
+        "Simple viewer to stream events from an event file, using the SDK driver API\n");
+    std::string long_program_desc(short_program_desc +
+        "Press 'q' or Escape key to leave the program\n");
+    std::cout << long_program_desc << std::endl;
 
-				if (choice == 'r' || choice == 'R') {
-					continue;  // 重新输入
-				}
-				else {
-					return 0;  // 退出程序
-				}
-			}
-			else {
-				break;  // 文件存在
-			}
-		}
-	}
+    // Start Python ZED playback script in a detached thread
+    std::thread python_zed_thread(run_python_script, python_path, zed_playback_path);
+    python_zed_thread.detach();
 
-	const std::string short_program_desc(
-		"Simple viewer to stream events from an event file, using the SDK driver API\n");
-	std::string long_program_desc(short_program_desc +
-		"Press 'q' or Escape key to leave the program\n");
-	std::cout << long_program_desc << std::endl;
+    // ----------------- Event file initialization -----------------
 
-	std::thread python_thread(run_python_script, python_path, read1_path);
-	python_thread.join();
+    std::cout << "DVSense Event file path: " << event_file_path << std::endl;
 
-	// ----------------- Event file initialization -----------------
+    dvsense::DvsFile reader = dvsense::DvsFileReader::createFileReader(event_file_path);
+    reader->loadFile();
 
-	std::cout << "Event file path: " << event_file_path << std::endl;
+    EventAnalyzer event_analyzer;
+    event_analyzer.setup_display(reader->getWidth(), reader->getHeight());
 
-	dvsense::DvsFile reader = dvsense::DvsFileReader::createFileReader(event_file_path);
-	reader->loadFile();
+    const int fps = 25;
+    const int wait_time = static_cast<int>(std::round(1.f / fps * 1000));
+    cv::Mat display;
+    const std::string window_name = "DVSense File Viewer";
+    cv::namedWindow(window_name, cv::WINDOW_GUI_EXPANDED);
+    cv::resizeWindow(window_name, reader->getWidth(), reader->getHeight());
 
-	EventAnalyzer event_analyzer;
-	event_analyzer.setup_display(reader->getWidth(), reader->getHeight());
+    // ----------------- Event processing and show -----------------
 
-	const int fps = 25; // event-based cameras do not have a frame rate, but we need one for visualization
-	const int wait_time = static_cast<int>(std::round(1.f / fps * 1000)); // how long we should wait between two frames
-	cv::Mat display;                                                      // frame where events will be accumulated
-	const std::string window_name = "DVSense File Viewer";
-	cv::namedWindow(window_name, cv::WINDOW_GUI_EXPANDED);
-	cv::resizeWindow(window_name, reader->getWidth(), reader->getHeight());
+    dvsense::TimeStamp start_timestamp, end_timestamp;
+    reader->getStartTimeStamp(start_timestamp);
+    reader->getEndTimeStamp(end_timestamp);
+    dvsense::TimeStamp current_dvsense_time = start_timestamp;
+    bool stop_application = false;
 
-	// ----------------- Event processing and show -----------------
+    std::cout << "DVSense Start Timestamp: " << start_timestamp << std::endl;
+    std::cout << "DVSense End Timestamp: " << end_timestamp << std::endl;
 
-	dvsense::TimeStamp start_timestamp, end_timestamp;
-	reader->getStartTimeStamp(start_timestamp);
-	reader->getEndTimeStamp(end_timestamp);
-	uint64_t max_events = 0;
-	//reader->getMaxEvents(max_events);
-	dvsense::TimeStamp get_time = start_timestamp;
-	bool stop_application = false;
+    // Signal Python that DVSense is ready to start
+    set_dvsense_ready_signal();
+    std::cout << "DVSense ready signal sent." << std::endl;
 
-	std::cout << "Start Timestamp: " << start_timestamp << std::endl;
-	std::cout << "End Timestamp: " << end_timestamp << std::endl;
 
-	std::thread python_read2(run_python_script, python_path, read2_path);
+    while (!stop_application) {
+        // Control the acquisition time and display frame rate to determine the playback rate
+        std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimeStamp(current_dvsense_time, 10000);
 
-	while (!stop_application) {
-		//Control the acquisition time and display frame rate to determine the playback rate
-		std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimeStamp(get_time, 10000);
-		get_time += 40000;
-		event_analyzer.process_events(events->data(), events->data() + events->size());
+        // Advance DVSense time
+        if (events && events->size() > 0) {
+            current_dvsense_time = events->back().timestamp;
+        } else {
+            current_dvsense_time += 40000; // Increment if no events found in the interval
+        }
 
-		if (get_time >= end_timestamp)
-		{
-			//replay
-			get_time = start_timestamp;
-			std::cout << "C.Playback finished, replaying" << std::endl;
-			reader->seekTime(get_time);
-		}
-		event_analyzer.get_display_frame(display);
-		if (!display.empty()) {
-			cv::imshow(window_name, display);
-		}
+        // Periodically write the current DVSense timestamp for coarse sync
+        // You might want to adjust how often this is written to avoid excessive file I/O
+        static auto last_timestamp_write_time = std::chrono::high_resolution_clock::now();
+        auto now = std::chrono::high_resolution_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_timestamp_write_time).count() > 100) { // Write every 100ms
+            write_dvsense_timestamp(current_dvsense_time);
+            last_timestamp_write_time = now;
+        }
 
-		// If user presses `q` key, exit loop and stop application
-		int key = cv::waitKey(wait_time);
-		if ((key & 0xff) == 'q' || (key & 0xff) == 27 || check_stop_signal()) {
-			stop_application = true;
-			std::cout << "Button triggered, exit" << std::endl;
-		}
-	}
 
-	cv::destroyAllWindows();
-	if (!check_stop_signal()) {
-		set_stop_signal();
-	}
-	else {
-		clearTempFolder();
-	}
+        event_analyzer.process_events(events->data(), events->data() + events->size());
 
-	python_read2.join();
+        if (current_dvsense_time >= end_timestamp) {
+            // Replay
+            current_dvsense_time = start_timestamp;
+            std::cout << "DVSense Playback finished, replaying" << std::endl;
+            reader->seekTime(current_dvsense_time);
+            set_dvsense_rewind_signal(); // Signal ZED to rewind
+        }
+        event_analyzer.get_display_frame(display);
+        if (!display.empty()) {
+            cv::imshow(window_name, display);
+        }
 
-	return 0;
+        int key = cv::waitKey(wait_time);
+        if ((key & 0xff) == 'q' || (key & 0xff) == 27 || check_stop_signal()) {
+            stop_application = true;
+            std::cout << "Button triggered, exit" << std::endl;
+            set_stop_signal(); // Signal Python to stop
+        }
+    }
+
+    cv::destroyAllWindows();
+    // Ensure all cleanup signals are sent
+    set_stop_signal(); // Redundant, but ensures stop signal is definitely set
+    clearTempFolder(); // Clears all temp files, including signals
+
+    // No need to join python_zed_thread as it's detached and relies on stop_signal.txt
+    return 0;
 }
 
 int savepng1(int argc, char* argv[]) {
