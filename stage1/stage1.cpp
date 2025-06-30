@@ -407,7 +407,7 @@ int readFromFile(int argc, char* argv[]) {
     clearTempFolder(); // Clears all existing signals
 
     std::string python_path = "/usr/bin/python3"; // Adjust for your system
-    std::string zed_playback_path = "../../display_live_feed.py"; // Your ZED playback script
+    std::string zed_playback_path = "../../playback_svo.py"; // Your ZED playback script
 
     // Ensure temp folder exists for signals
     std::filesystem::create_directories("../../Recording/temp");

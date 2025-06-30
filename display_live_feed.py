@@ -1,207 +1,174 @@
 import sys
+import numpy as np
 import pyzed.sl as sl
 import cv2
 import os
 import time
-import threading
-from pathlib import Path
 
-# --- Absolute Paths Setup ---
-# Get the absolute path to the directory where this script resides.
-# Based on your confirmed structure and debug output, this will be:
-# /home/ruluckeysherpa/Desktop/Multi-Camera Sensor/DV/
-script_dir_path = Path(os.path.abspath(__file__)).parent
+# Define the paths for the signal files, matching the C++ application
+# IMPORTANT: Adjust these paths if your Python script is not in the same relative location
+# to the 'Recording/temp' folder as your C++ executable.
+# Assume C++ executable is in 'build/Release' and Recording/temp is '../../Recording/temp'
+# If Python script is at the same level as 'build' and 'Recording', then just 'Recording/temp'
+TEMP_FOLDER = "../../Recording/temp" # Adjust this path as needed!
+SR_SIGNAL_FILE = os.path.join(TEMP_FOLDER, "src.txt") # Start Record Signal
+SS_SIGNAL_FILE = os.path.join(TEMP_FOLDER, "ssc.txt") # Stop Record Signal
 
-# Now, construct the paths relative to this script's directory.
-# 'captured_videos' and 'Recording' are direct child directories of script_dir_path.
+def check_sr_signal():
+    return os.path.exists(SR_SIGNAL_FILE)
 
-# Path to the folder containing ZED SVO videos
-video_folder = script_dir_path / 'captured_videos'
+def check_ss_signal():
+    return os.path.exists(SS_SIGNAL_FILE)
 
-# Path to the temporary folder for signal files
-TEMP_FOLDER = script_dir_path / 'Recording' / 'temp'
-
-# --- Debug Prints (Keep these in for now!) ---
-print(f"Debug (Python): Script directory: {script_dir_path}")
-# Removed 'DV directory' print as it's no longer a distinct variable
-print(f"Debug (Python): Constructed video_folder: {video_folder}")
-print(f"Debug (Python): Constructed TEMP_FOLDER: {TEMP_FOLDER}")
-print("-" * 50)
-
-
-# --- File-based Communication Setup ---
-DVSENSE_READY_FILE = TEMP_FOLDER / 'dvsense_ready.txt'
-DVSENSE_TIMESTAMP_FILE = TEMP_FOLDER / 'dvsense_timestamp.txt'
-DVSENSE_REWIND_FILE = TEMP_FOLDER / 'dvsense_rewind.txt'
-STOP_SIGNAL_FILE = TEMP_FOLDER / 'stop_signal.txt'
-
-
-# --- Helper Functions for File-based IPC ---
-def check_file_signal(file_path):
-    """Checks if a signal file exists."""
-    return Path(file_path).exists()
-
-def clear_file_signal(file_path):
-    """Deletes a signal file if it exists."""
-    if Path(file_path).exists():
-        Path(file_path).unlink() # Use unlink for files
-
-def read_timestamp_from_file():
-    """Reads the timestamp from the signal file."""
-    if Path(DVSENSE_TIMESTAMP_FILE).exists():
+def clear_signal_files():
+    # This function is crucial to ensure signals are acted upon only once
+    if os.path.exists(SR_SIGNAL_FILE):
         try:
-            with open(DVSENSE_TIMESTAMP_FILE, 'r') as f:
-                return int(f.read().strip())
-        except (ValueError, IOError):
-            # Handle cases where file is empty, corrupted, or not an integer
-            return None
-    return None
+            os.remove(SR_SIGNAL_FILE)
+            print(f"Removed: {SR_SIGNAL_FILE}")
+        except OSError as e:
+            print(f"Error removing {SR_SIGNAL_FILE}: {e}")
+    if os.path.exists(SS_SIGNAL_FILE):
+        try:
+            os.remove(SS_SIGNAL_FILE)
+            print(f"Removed: {SS_SIGNAL_FILE}")
+        except OSError as e:
+            print(f"Error removing {SS_SIGNAL_FILE}: {e}")
 
-# --- Main ZED Playback Function ---
+def get_next_filename(directory, base_filename):
+    """Generates a unique filename with a timestamp."""
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    return os.path.join(directory, f"{base_filename}_{timestamp}.svo")
+
 def run():
-    # Create a ZED camera object
+    """
+    Initializes ZED camera, displays live feed, and records to SVO when 'r' is pressed
+    or when external signals are detected.
+    """
     zed = sl.Camera()
 
-    # List all SVO files in the directory
-    try:
-        video_files = [f for f in os.listdir(str(video_folder)) if f.endswith('.svo2')]
-    except FileNotFoundError:
-        print(f"Error: The video folder '{video_folder}' does not exist or is inaccessible. Please check the path.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"An unexpected error occurred while listing video files: {e}")
-        sys.exit(1)
+    # Define directory for captured videos and create if it doesn't exist
+    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captured_videos")
+    os.makedirs(directory, exist_ok=True)
 
-    if not video_files:
-        print(f"No SVO files found in the directory: {video_folder}. Exiting ZED playback.")
-        sys.exit(1)
+    output_path = "" # Initialize output_path. It will be updated if recording starts.
 
-    print("Available ZED video files:")
-    for idx, video in enumerate(video_files, start=1):
-        print(f"{idx}. {video}")
+    # ZED camera initialization parameters
+    resolution = sl.RESOLUTION.HD1080
 
-    # Ask the user to select a video
-    choice = input(f"Select a ZED video (1-{len(video_files)}): ")
-    
-    try:
-        choice = int(choice)
-        if choice < 1 or choice > len(video_files):
-            raise ValueError
-    except ValueError:
-        print("Invalid choice. Exiting ZED playback.")
-        sys.exit(1)
+    init_params = sl.InitParameters()
+    init_params.camera_resolution = resolution
+    init_params.camera_fps = 30
+    init_params.depth_mode = sl.DEPTH_MODE.NEURAL
+    init_params.coordinate_units = sl.UNIT.MILLIMETER
 
-    input_file = os.path.join(str(video_folder), video_files[choice - 1])
+    # Open the ZED camera
+    if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
+        print("Failed to open ZED camera")
+        return
 
-    print(f"Playing ZED video: {video_files[choice - 1]}")
+    # Enable positional tracking (optional, but in original script)
+    positional_tracking_params = sl.PositionalTrackingParameters()
+    zed.enable_positional_tracking(positional_tracking_params)
 
-    input_type = sl.InputType()
-    input_type.set_from_svo_file(input_file)
+    # Create OpenCV windows for display
+    cv2.namedWindow("RGB View", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("Depth Map", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("Confidence Map", cv2.WINDOW_NORMAL)
 
-    init = sl.InitParameters(input_t=input_type)
-    init.camera_resolution = sl.RESOLUTION.HD1080 # This sets max resolution, SVO will dictate
-    init.depth_mode = sl.DEPTH_MODE.NONE # Not strictly needed for display, but can be set
-    init.coordinate_units = sl.UNIT.MILLIMETER
+    # Set window positions
+    cv2.moveWindow("RGB View", 0, 0)
+    cv2.moveWindow("Depth Map", 640, 0)
+    cv2.moveWindow("Confidence Map", 0, 480)
 
-    # Open the ZED camera or load the SVO file
-    err = zed.open(init)
-    if err != sl.ERROR_CODE.SUCCESS:
-        print(f"Error opening ZED SVO file: {repr(err)}")
-        zed.close()
-        sys.exit(1)
+    # Recording state flag for this script
+    recording_active = False
+    runtime_params = sl.RuntimeParameters()
 
-    # Get original recording FPS (for initial delay, though seeking will be primary)
-    camera_fps = zed.get_camera_information().camera_configuration.fps
-    frame_delay = int(1000 / camera_fps) if camera_fps > 0 else 30 # Default to 30ms if fps is 0
+    # ZED Mat objects for image, depth, and confidence data
+    image = sl.Mat()
+    depth = sl.Mat()
+    confidence = sl.Mat()
 
-    runtime = sl.RuntimeParameters()
-    image_size = zed.get_camera_information().camera_configuration.resolution
-    image_zed = sl.Mat(image_size.width, image_size.height, sl.MAT_TYPE.U8_C4)
+    print("Press 'q' to quit (from this window).")
+    print("Recording will be controlled by Spacebar in the DVSense window.")
 
-    cv2.namedWindow("ZED Image", cv2.WINDOW_AUTOSIZE)
-    print('ZED Playback: Waiting for DVSense to be ready...')
+    key = ' '
+    while key != 113:  # ASCII for 'q'
+        # Check for external start/stop signals
+        should_start_recording = check_sr_signal()
+        should_stop_recording = check_ss_signal()
 
-    # --- Wait for DVSense ready signal ---
-    while not check_file_signal(DVSENSE_READY_FILE) and not check_file_signal(STOP_SIGNAL_FILE):
-        time.sleep(0.05) # Wait for 50ms before checking again
+        if should_start_recording and not recording_active:
+            # Start recording
+            output_path = get_next_filename(directory, "captured_video")
+            recording_params = sl.RecordingParameters(output_path, sl.SVO_COMPRESSION_MODE.H264)
+            err = zed.enable_recording(recording_params)
+            if err == sl.ERROR_CODE.SUCCESS:
+                recording_active = True
+                print(f"ZED SVO recording started: {output_path}")
+            else:
+                print(f"Failed to start ZED SVO recording: {err}")
+            clear_signal_files() # Clear the signal after acting on it
 
-    if check_file_signal(STOP_SIGNAL_FILE):
-        print("ZED Playback: Stop signal received before DVSense was ready. Exiting.")
-        zed.close()
-        sys.exit(0)
-    
-    print("ZED Playback: DVSense ready signal received. Starting playback.")
-    clear_file_signal(DVSENSE_READY_FILE) # Clear the ready signal once read
+        elif should_stop_recording and recording_active:
+            # Stop recording
+            zed.disable_recording()
+            recording_active = False
+            print("ZED SVO recording stopped.")
+            print(f"SVO file saved to {output_path}")
+            clear_signal_files() # Clear the signal after acting on it
 
-    # Get the actual start timestamp of the ZED SVO by grabbing first frame
-    zed.set_svo_position(0) # Ensure at start
-    grab_status = zed.grab(runtime)
-    first_frame_timestamp_us = 0
-    if grab_status == sl.ERROR_CODE.SUCCESS:
-        zed.retrieve_image(image_zed, sl.VIEW.LEFT, sl.MEM.CPU, image_size)
-        first_frame_timestamp_us = zed.get_timestamp(sl.TIME_REFERENCE.IMAGE).get_microseconds()
-        zed.set_svo_position(0) # Rewind to start after getting timestamp
-    else:
-        print("Could not grab first frame to get ZED SVO start timestamp. Using 0.")
-    
-    print(f"ZED SVO estimated start timestamp: {first_frame_timestamp_us} us")
+        # The zed.grab() call is what captures the data,
+        # and if recording is enabled, it's automatically saved.
+        if zed.grab(runtime_params) == sl.ERROR_CODE.SUCCESS:
+            zed.retrieve_image(image, sl.VIEW.LEFT)
+            zed.retrieve_image(depth, sl.VIEW.DEPTH)
+            zed.retrieve_measure(confidence, sl.MEASURE.CONFIDENCE)
 
-    while not check_file_signal(STOP_SIGNAL_FILE):
-        # Check for rewind signal from DVSense
-        if check_file_signal(DVSENSE_REWIND_FILE):
-            zed.set_svo_position(0)
-            print("ZED SVO rewound to start (DVSense rewind signal).")
-            clear_file_signal(DVSENSE_REWIND_FILE)
+            # --- Visual Feedback for Recording ---
+            if recording_active:
+                # Add "REC" text to the display for visual feedback
+                cv2.putText(image.get_data(), "REC", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        # Read the latest DVSense timestamp for coarse sync
-        dvsense_timestamp = read_timestamp_from_file()
+            # --- Display Logic ---
+            img_np = image.get_data()
 
-        # Grab the next frame from ZED SVO
-        err = zed.grab(runtime)
-        
-        if err == sl.ERROR_CODE.SUCCESS:
-            zed.retrieve_image(image_zed, sl.VIEW.LEFT, sl.MEM.CPU, image_size)
-            image_ocv = image_zed.get_data()
-            current_zed_timestamp_us = zed.get_timestamp(sl.TIME_REFERENCE.IMAGE).get_microseconds()
+            depth_data = depth.get_data()
+            conf_data = confidence.get_data()
 
-            if dvsense_timestamp is not None and current_zed_timestamp_us > 0:
-                # Basic coarse synchronization: if ZED is too far ahead of DVSense, wait a bit
-                time_diff_us = current_zed_timestamp_us - dvsense_timestamp
+            # Handle cases where depth/confidence data might not be immediately available
+            if depth_data is None or conf_data is None:
+                cv2.imshow("RGB View", img_np) # Still show RGB if possible
+                cv2.imshow("Depth Map", np.zeros((resolution.height, resolution.width), dtype=np.uint8))
+                cv2.imshow("Confidence Map", np.zeros((resolution.height, resolution.width, 3), dtype=np.uint8))
+            else:
+                depth_map = cv2.normalize(depth_data, None, 0, 255, cv2.NORM_MINMAX)
+                depth_map = cv2.convertScaleAbs(depth_map) # Convert to 8-bit for display
 
-                # If ZED is significantly ahead (e.g., more than 50ms), introduce a small delay
-                if time_diff_us > 50000: # 50000 us = 50 ms
-                    # print(f"ZED ahead by {time_diff_us / 1000:.1f}ms. Waiting.") # Uncomment for debugging sync
-                    time.sleep(0.01) # Small pause (10ms) to let DVSense catch up
+                conf_map = cv2.normalize(conf_data, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                conf_map = cv2.applyColorMap(conf_map, cv2.COLORMAP_JET)
 
-            cv2.imshow("ZED Image", image_ocv)
+                cv2.imshow("RGB View", img_np)
+                cv2.imshow("Depth Map", depth_map)
+                cv2.imshow("Confidence Map", conf_map)
 
-        elif err == sl.ERROR_CODE.END_OF_SVOFILE_REACHED:
-            print("End of ZED SVO file reached. Waiting for DVSense rewind signal or stop.")
-            while not check_file_signal(DVSENSE_REWIND_FILE) and not check_file_signal(STOP_SIGNAL_FILE):
-                time.sleep(0.05) 
+        key = cv2.waitKey(10) # Wait 10ms for key press and refresh display
 
-        elif err == sl.ERROR_CODE.NOT_A_NEW_FRAME:
-            time.sleep(0.001) 
-        else:
-            print(f"ZED grab error: {repr(err)}")
-            break 
+        # Removed 'r' key press logic for recording, now solely relies on signals
+        # if key == 114: # ASCII for 'r'
+        #    ... (old 'r' key logic) ...
 
-        key = cv2.waitKey(1)
-        if key & 0xFF == ord('q'):
-            print("ZED Playback: 'q' pressed. Signaling C++ to stop.")
-            with open(STOP_SIGNAL_FILE, 'w') as f:
-                f.write("STOP")
-            break
 
-    cv2.destroyAllWindows()
+    # --- Cleanup on exit ---
+    if recording_active: # Ensure recording is stopped if the loop exits while recording
+        zed.disable_recording()
+        print("ZED SVO recording stopped on exit.")
+    clear_signal_files() # Ensure signal files are clean on exit
+
     zed.close()
-    print("\nZED Playback FINISHED")
+    cv2.destroyAllWindows()
+    print("\nFINISH")
 
-# --- Main execution block ---
 if __name__ == "__main__":
-    try:
-        # Ensure temp folder exists for signals for Python script too
-        TEMP_FOLDER.mkdir(parents=True, exist_ok=True)
-        run()
-    except KeyboardInterrupt:
-        print("\nZED Playback interrupted by user (Ctrl+C).")
+    run()
