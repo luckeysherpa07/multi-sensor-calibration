@@ -260,12 +260,26 @@ int recordFromCamera(int argc, char* argv[]) {
     std::cout << "Saving file to: " << out_file_path << std::endl;
 
     // ----------------- Run Python scripts -----------------
-    std::thread python_thread1(run_python_script, python_path, live1_path);
-    std::thread python_thread2(run_python_script, python_path, live2_path);
-    std::thread python_thread3(run_python_script, python_path, display_feed_path); // New thread for display_live_feed.py
-    python_thread1.detach();
-    python_thread2.detach();
-    python_thread3.detach(); // Join the new thread
+	auto run_python_script_with_args = [](const std::string& python_path, const std::string& script_path, const std::string& arg = "") {
+		std::string command = python_path + " " + script_path;
+		if (!arg.empty()) {
+			command += " " + arg;
+		}
+		std::cout << "Executing: " << command << std::endl;
+		std::system(command.c_str());
+	};
+
+	std::string base_file_name = file_name.substr(0, file_name.find_last_of("."));  // strip ".raw"
+
+	// Run Python scripts in detached threads
+	std::thread python_thread1(run_python_script_with_args, python_path, live1_path);
+	std::thread python_thread2(run_python_script_with_args, python_path, live2_path);
+	std::thread python_thread3(run_python_script_with_args, python_path, display_feed_path, base_file_name);  // Pass filename here
+
+	python_thread1.detach();
+	python_thread2.detach();
+	python_thread3.detach();
+
 
     cv::Mat display;
     const std::string window_name = "DVSense Camera Viewer";
