@@ -469,7 +469,7 @@ int readFromFile(int argc, char* argv[]) {
     std::cout << long_program_desc << std::endl;
 
     // Start Python ZED playback script in a detached thread
-    std::thread python_zed_thread(run_python_script, python_path, zed_playback_path);
+    std::thread python_zed_thread(run_python_script, python_path, zed_playback_path + " " + file_name);
     python_zed_thread.detach();
 
     // ----------------- Event file initialization -----------------
