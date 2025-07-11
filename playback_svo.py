@@ -73,8 +73,14 @@ def run(svo_filename):
 
     runtime = sl.RuntimeParameters()
 
-    cv2.namedWindow("ZED Image", cv2.WINDOW_AUTOSIZE)
-    cv2.namedWindow("ZED Depth", cv2.WINDOW_AUTOSIZE)
+    # Set desired display window size
+    DISPLAY_WIDTH = 640
+    DISPLAY_HEIGHT = 360
+
+    cv2.namedWindow("ZED Image", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("ZED Depth", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("ZED Image", DISPLAY_WIDTH, DISPLAY_HEIGHT)
+    cv2.resizeWindow("ZED Depth", DISPLAY_WIDTH, DISPLAY_HEIGHT)
 
     print('Waiting for DVSense to be ready...')
     while not check_file_signal(DVSENSE_READY_FILE) and not check_file_signal(STOP_SIGNAL_FILE):
@@ -134,8 +140,12 @@ def run(svo_filename):
                 if time_diff > 50000:
                     time.sleep(0.01)
 
-            cv2.imshow("ZED Image", image_ocv)
-            cv2.imshow("ZED Depth", depth_gray)
+            # Resize frames before showing
+            image_small = cv2.resize(image_ocv, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
+            depth_small = cv2.resize(depth_gray, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
+
+            cv2.imshow("ZED Image", image_small)
+            cv2.imshow("ZED Depth", depth_small)
 
         elif err == sl.ERROR_CODE.END_OF_SVOFILE_REACHED:
             print("End of SVO file reached.")
