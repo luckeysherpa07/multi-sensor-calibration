@@ -417,7 +417,6 @@ int recordFromCamera(int argc, char* argv[]) {
 }
 
 int readFromFile(int argc, char* argv[]) {
-
     clearTempFolder(); // Clears all existing signals
 
     std::string python_path = "/usr/bin/python3"; // Adjust for your system
@@ -482,65 +481,71 @@ int readFromFile(int argc, char* argv[]) {
     EventAnalyzer event_analyzer;
     event_analyzer.setup_display(reader->getWidth(), reader->getHeight());
 
-    const int fps = 25;
-    const int wait_time = static_cast<int>(std::round(1.f / fps * 1000));
     cv::Mat display;
     const std::string window_name = "DVSense File Viewer";
     cv::namedWindow(window_name, cv::WINDOW_GUI_EXPANDED);
     cv::resizeWindow(window_name, reader->getWidth(), reader->getHeight());
 
-    // ----------------- Event processing and show -----------------
-
     dvsense::TimeStamp start_timestamp, end_timestamp;
     reader->getStartTimeStamp(start_timestamp);
     reader->getEndTimeStamp(end_timestamp);
     dvsense::TimeStamp current_dvsense_time = start_timestamp;
-    bool stop_application = false;
 
     std::cout << "DVSense Start Timestamp: " << start_timestamp << std::endl;
     std::cout << "DVSense End Timestamp: " << end_timestamp << std::endl;
 
-    // Signal Python that DVSense is ready to start
     set_dvsense_ready_signal();
     std::cout << "DVSense ready signal sent." << std::endl;
 
+    bool stop_application = false;
+
+    // Initialize sync variables
+    dvsense::TimeStamp last_dvsense_time = current_dvsense_time;
+    auto last_wall_time = std::chrono::high_resolution_clock::now();
 
     while (!stop_application) {
-        // Control the acquisition time and display frame rate to determine the playback rate
         std::shared_ptr<dvsense::Event2DVector> events = reader->getNTimeEventsGivenStartTimeStamp(current_dvsense_time, 10000);
 
-        // Advance DVSense time
         if (events && events->size() > 0) {
             current_dvsense_time = events->back().timestamp;
         } else {
-            current_dvsense_time += 40000; // Increment if no events found in the interval
+            current_dvsense_time += 40000; // Increment if no events found
         }
 
-        // Periodically write the current DVSense timestamp for coarse sync
-        // You might want to adjust how often this is written to avoid excessive file I/O
+        // Write timestamp to file every 100ms
         static auto last_timestamp_write_time = std::chrono::high_resolution_clock::now();
         auto now = std::chrono::high_resolution_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_timestamp_write_time).count() > 100) { // Write every 100ms
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_timestamp_write_time).count() > 100) {
             write_dvsense_timestamp(current_dvsense_time);
             last_timestamp_write_time = now;
         }
 
-
         event_analyzer.process_events(events->data(), events->data() + events->size());
 
         if (current_dvsense_time >= end_timestamp) {
-            // Replay
             current_dvsense_time = start_timestamp;
             std::cout << "DVSense Playback finished, replaying" << std::endl;
             reader->seekTime(current_dvsense_time);
-            set_dvsense_rewind_signal(); // Signal ZED to rewind
+            set_dvsense_rewind_signal();
         }
+
         event_analyzer.get_display_frame(display);
         if (!display.empty()) {
             cv::imshow(window_name, display);
         }
 
-        int key = cv::waitKey(wait_time);
+        // Real-time emulation delay
+        auto now_wall = std::chrono::high_resolution_clock::now();
+        int64_t delta_us = current_dvsense_time - last_dvsense_time;
+        auto elapsed_wall = std::chrono::duration_cast<std::chrono::microseconds>(now_wall - last_wall_time).count();
+        int64_t sleep_us = delta_us - elapsed_wall;
+        if (sleep_us > 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+        }
+        last_dvsense_time = current_dvsense_time;
+        last_wall_time = std::chrono::high_resolution_clock::now();
+
+        int key = cv::waitKey(1);
         if ((key & 0xff) == 'q' || (key & 0xff) == 27 || check_stop_signal()) {
             stop_application = true;
             std::cout << "Button triggered, exit" << std::endl;
@@ -549,11 +554,9 @@ int readFromFile(int argc, char* argv[]) {
     }
 
     cv::destroyAllWindows();
-    // Ensure all cleanup signals are sent
-    set_stop_signal(); // Redundant, but ensures stop signal is definitely set
-    clearTempFolder(); // Clears all temp files, including signals
+    set_stop_signal();
+    clearTempFolder();
 
-    // No need to join python_zed_thread as it's detached and relies on stop_signal.txt
     return 0;
 }
 
